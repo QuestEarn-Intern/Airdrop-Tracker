@@ -20,6 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests
+          pip install requests feedparser
 
       - name: Run Scraper Script
         env:
@@ -27,3 +28,5 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python scraper.py
+
+  
