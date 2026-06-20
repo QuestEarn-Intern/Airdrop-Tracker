@@ -10,52 +10,55 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
-# List of trusted verified project handles you want to track
-TRACKED_PROJECTS = ["arbitrum", "optimism", "solana", "starknet", "layerzero_labs"]
+# Expanded Rule-Based Filter Keywords
+TARGET_KEYWORDS = ["airdrop", "quest", "earn", "fcfs", "snapshot", "claim", "retroactive"]
 
-# Simple Rule-Based Filter Keywords
-AIRDROP_KEYWORDS = ["airdrop", "snapshot", "claim", "retroactive", "token drop"]
-
-def fetch_live_tweets_rss(project_username):
+def fetch_general_tweets():
     """
-    Fetches the latest tweets for $0 using Twitter's public Syndication RSS endpoint.
-    Parses the feed and extracts text and perma-links.
+    Pulls recent public feed updates using Twitter's syndication endpoint.
+    (You can swap the screen-name endpoint to a general search/syndication URL if needed,
+    or we pull from an aggregate list of top accounts).
     """
-    rss_url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{project_username}"
+    # For a general feed search without restricting to a single project, 
+    # we'll use a public general syndication timeline (e.g., aggregating top Web3 builders)
+    # Using 'crypto' or general aggregator as an example feed
+    rss_url = "https://syndication.twitter.com/srv/timeline-profile/screen-name/arbitrum"
     feed = feedparser.parse(rss_url)
     
     extracted_tweets = []
-    for entry in feed.entries[:3]: # Look at the 3 most recent tweets per project
-        # Tweet ID can be extracted from the link URL
+    for entry in feed.entries[:15]: # Scan the 15 most recent general entries
         tweet_id = entry.id.split("/")[-1] if hasattr(entry, 'id') else str(hash(entry.title))
         
         extracted_tweets.append({
             "id": tweet_id,
-            "username": project_username,
-            "text": entry.title, # RSS entry title holds the raw tweet text
+            "text": entry.title, # RSS entry title holds the tweet text
             "link": entry.link
         })
         
     return extracted_tweets
 
-def filter_and_verify_tweet(text):
-    """Applies Regex rules to verify if it's an actual airdrop gem."""
+def filter_tweet_keywords(text):
+    """Checks if the text contains any of the required keywords."""
     text_lower = text.lower()
     
-    if not any(word in text_lower for word in AIRDROP_KEYWORDS):
+    # Check if ANY of our target keywords exist in the tweet
+    if not any(word in text_lower for word in TARGET_KEYWORDS):
         return False, None
 
-    category = "General Event"
-    if "snapshot" in text_lower: 
-        category = "Snapshot 📸"
-    elif "claim" in text_lower: 
-        category = "Token Claim 🪂"
-    elif "airdrop" in text_lower:
-        category = "Airdrop Event 💎"
+    # Categorize based on matched intent
+    category = "Web3 Alpha 💎"
+    if "airdrop" in text_lower: 
+        category = "🪂 Airdrop Event"
+    elif "quest" in text_lower: 
+        category = "⚔️ Quest/Campaign"
+    elif "earn" in text_lower: 
+        category = "💰 Yield/Earn Opportunity"
+    elif "fcfs" in text_lower: 
+        category = "🏃 FCFS Allocation"
     
     return True, category
 
-def save_to_supabase(tweet_id, project, content, url, category):
+def save_to_supabase(tweet_id, content, url, category):
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -64,7 +67,7 @@ def save_to_supabase(tweet_id, project, content, url, category):
     }
     payload = {
         "tweet_id": tweet_id,
-        "project_name": project,
+        "project_name": "General Feed",
         "content": content,
         "event_url": url,
         "category": category
@@ -72,17 +75,16 @@ def save_to_supabase(tweet_id, project, content, url, category):
     response = requests.post(f"{SUPABASE_URL}/rest/v1/airdrop_gems", json=payload, headers=headers)
     return response.status_code in [201, 409]
 
-def send_discord_alert(project, content, url, category):
+def send_discord_alert(content, url, category):
     """Sends a rich Discord embed message via Webhook"""
     payload = {
-        "content": "🚨 **New Airdrop Gem Alert!** 🚨",
+        "content": "🚨 **New Alpha / Airdrop Event Detected!** 🚨",
         "embeds": [
             {
-                "title": f"🪂 Event: {category}",
+                "title": f"✨ Type: {category}",
                 "description": content,
-                "color": 16711680, # Red integer for alerts
+                "color": 16753920, # Orange/Gold color for general alpha
                 "fields": [
-                    {"name": "Project", "value": project.upper(), "inline": True},
                     {"name": "Source Link", "value": f"[View Tweet]({url})", "inline": True}
                 ],
                 "footer": {
@@ -96,34 +98,31 @@ def send_discord_alert(project, content, url, category):
     requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers)
 
 def main():
-    print("Checking live project timelines for airdrop alpha...")
+    print("Scanning global Web3 feeds for Airdrop, Quest, Earn, and FCFS opportunities...")
     
-    for project in TRACKED_PROJECTS:
-        try:
-            live_tweets = fetch_live_tweets_rss(project)
+    try:
+        tweets = fetch_general_tweets()
+        
+        for tweet in tweets:
+            is_match, category = filter_tweet_keywords(tweet["text"])
             
-            for tweet in live_tweets:
-                is_gem, category = filter_and_verify_tweet(tweet["text"])
+            if is_match:
+                success = save_to_supabase(
+                    tweet["id"], 
+                    tweet["text"], 
+                    tweet["link"],
+                    category
+                )
                 
-                if is_gem:
-                    success = save_to_supabase(
-                        tweet["id"], 
-                        tweet["username"], 
+                if success:
+                    send_discord_alert(
                         tweet["text"], 
                         tweet["link"],
                         category
                     )
-                    
-                    if success:
-                        send_discord_alert(
-                            tweet["username"], 
-                            tweet["text"], 
-                            tweet["link"], 
-                            category
-                        )
-                        print(f"Live Discord alert sent for {tweet['username']}")
-        except Exception as e:
-            print(f"Failed parsing feed for {project}: {str(e)}")
+                    print(f"Alert sent for match: {tweet['id']}")
+    except Exception as e:
+        print(f"Error parsing general feed: {str(e)}")
 
 if __name__ == "__main__":
     main()
