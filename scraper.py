@@ -85,6 +85,7 @@ def save_to_supabase(item_id, source_platform, content, url, category):
         "Content-Type": "application/json",
         "Prefer": "resolution=ignore"
     }
+    # Ensure there is a slash between SUPABASE_URL and the rest endpoint
     payload = {
         "tweet_id": item_id, 
         "project_name": f"Tracker: {source_platform}",
@@ -92,7 +93,7 @@ def save_to_supabase(item_id, source_platform, content, url, category):
         "event_url": url,
         "category": category
     }
-    response = requests.post(f"{SUPABASE_URL}/rest/v1/airdrop_gems", json=payload, headers=headers)
+    response = requests.post(f"{SUPABASE_URL.rstrip('/')}/rest/v1/airdrop_gems", json=payload, headers=headers)
     return response.status_code in [201, 409]
 
 def send_discord_alert(source_platform, content, url, category):
