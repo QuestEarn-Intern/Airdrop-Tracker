@@ -13,23 +13,30 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 # Expanded Rule-Based Filter Keywords
 TARGET_KEYWORDS = ["airdrop", "quest", "earn", "fcfs", "snapshot", "claim", "retroactive", "token", "retrodrop"]
 
-# List of multiple reliable RSS endpoints covering Drop Hunting & General Crypto Alpha
+# Added User-Agent headers to bypass automated bot detection firewalls
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+# Reliable endpoints that allow open programmatic ingestion
 RSS_FEEDS = [
-    {"name": "Airdrop Alert", "url": "https://airdropalert.com/feed/rssfeed"},
     {"name": "CoinTelegraph", "url": "https://cointelegraph.com/rss"},
-    {"name": "CryptoRank News", "url": "https://cryptorank.io/news/tag/airdrop/rss"}, 
     {"name": "CryptoNews", "url": "https://cryptonews.com/news/feed"}
 ]
 
+def fetch_feed_with_ua(url):
+    """Fetches feed data with a standard browser User-Agent to prevent connection resets."""
+    response = requests.get(url, headers=HEADERS, timeout=15)
+    response.raise_for_status()
+    return feedparser.parse(response.content)
+
 def fetch_all_feeds():
-    """
-    Pulls real-time tracking updates by iterating over multiple RSS feeds.
-    """
+    """Pulls real-time tracking updates by iterating over multiple RSS feeds."""
     extracted_items = []
     
     for source in RSS_FEEDS:
         try:
-            feed = feedparser.parse(source["url"])
+            feed = fetch_feed_with_ua(source["url"])
             # Pull the 5 most recent items from each platform
             for entry in feed.entries[:5]:
                 item_id = entry.id.split("/")[-1] if hasattr(entry, 'id') else str(hash(entry.title))
